@@ -1,0 +1,4 @@
+*.o
+my_program
+output.jpeg
+.vscode/
