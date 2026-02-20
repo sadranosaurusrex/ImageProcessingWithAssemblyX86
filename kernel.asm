@@ -65,13 +65,13 @@ apply_filter_simd:
     mov al, [r9 + r11 + 1]          ; Load right neighbor
     mov bl, [r9 + r11 - 1]          ; Load left neighbor
     
-    shr al, 1
-    shr bl, 1
-    add al, bl                      ; Add left and right
-    jnc .no_overflow                ; If result >= 0 and no carry, skip capping
-    mov al, 255                     ; If it overflowed, saturate to 255 (White)
+    mov ah, al
+    sub al, bl                      ; sub of left and right
+    jns .no_overflow                ; If result >= 0 , skip capping
+    sub bl, ah                      ; If result < 0 we use the opposite of the result
+    mov al, bl
 .no_overflow:
-    
+    shl al, 2                       ; multiply the result by four for a more clear output
     mov [r12 + r11], al             ; Store single result
     inc r11                         ; Advance column index by 1
     jmp .scalar_fallback
