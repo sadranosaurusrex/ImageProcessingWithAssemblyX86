@@ -9,6 +9,26 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+void apply_filter_c(unsigned char *src, unsigned char *dest, int width, int height) {
+    for (int y = 1; y < height - 1; y++) {
+        for (int x = 1; x < width - 1; x++) {
+            int offset = y * width + x;
+            
+            int right = src[offset + 1];
+            int left  = src[offset - 1];
+            
+            // همان منطق قدر مطلق که در اسمبلی زدیم
+            int diff = abs(right - left);
+            
+            // ضربدر ۴ و اشباع روی ۲۵۵
+            int res = diff * 4;
+            if (res > 255) res = 255;
+            
+            dest[offset] = (unsigned char)res;
+        }
+    }
+}
+
 // Your assembly function declaration
 // RDI: src, RSI: dest, RDX: width, RCX: height
 extern void apply_filter_simd(unsigned char* src, unsigned char* dest, int width, int height);
@@ -36,7 +56,7 @@ int main() {
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     // اجرای جادوی اسمبلی
-    apply_filter_simd(img, output_img, width, height);
+    apply_filter_c(img, output_img, width, height);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
