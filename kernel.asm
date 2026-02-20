@@ -43,9 +43,13 @@ apply_filter_simd:
     vmovdqu ymm1, [r9 + r11 + 1]    ; Load 32 right neighbors
     vmovdqu ymm2, [r9 + r11 - 1]    ; Load 32 left neighbors
     
-    ; Parallel horizontal addition: Result = Saturation(Right + Left)
-    vpavgb ymm3, ymm1, ymm2  ; Result = (ymm1 + ymm2 + 1) / 2
+    ; result = (right - left) and the opposite clipped at zero
+    vpsubusb ymm3, ymm1, ymm2
+    vpsubusb ymm4, ymm2, ymm1
 
+    vpor ymm3, ymm4, ymm3           ; logical 'or' for absolute value of the subtraction
+
+    vpsllw ymm3, ymm3, 2            ; Each edge pixel is now 4x brighter
     
     vmovdqu [r12 + r11], ymm3       ; Store 32 results back to memory
     

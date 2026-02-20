@@ -15,32 +15,32 @@ int main() {
     int width, height, channels;
     int blurCount = 1000;
     
-    for (int i = 0; i < blurCount; i++ )
-    {
-        // 1. Load the image (Forcing 1 channel/Grayscale for simplicity)
-        unsigned char *img = stbi_load("output.jpeg", &width, &height, &channels, 1);
-        if (img == NULL) {
-            printf("Error: Could not load image.\n");
-            return 1;
-        }
-
-        // 2. Allocate memory for output image
-        unsigned char *output_img = (unsigned char *)malloc(width * height);
-
-        // printf("Image Loaded: %d x %d\n", width, height);
-
-        // 3. Call your Assembly function
-        apply_filter_simd(img, output_img, width, height);
-
-        // 4. Save the result
-        if (!(i % (blurCount/50))){
-            stbi_write_jpg("output.jpeg", width, height, 1, output_img, 100);
-        }
-
-        // 5. Cleanup
-        stbi_image_free(img);
-        free(output_img);
+    // for (int i = 0; i < blurCount; i++ )
+    // {
+    // 1. Load the image (Forcing 1 channel/Grayscale for simplicity)
+    unsigned char *img = stbi_load("output.jpeg", &width, &height, &channels, 1);
+    if (img == NULL) {
+        printf("Error: Could not load image.\n");
+        return 1;
     }
-    // printf("Processing complete. Check output.jpg\n");
+
+    // 2. Allocate memory for output image
+    unsigned char *output_img = (unsigned char *)malloc(width * height);
+
+    printf("Image Loaded: %d x %d\n", width, height);
+
+    // 3. Call your Assembly function
+    apply_filter_simd(img, output_img, width, height);
+
+    // 4. Save the result
+    // if (!(i % (blurCount/50))){
+    stbi_write_jpg("output.jpeg", width, height, 1, output_img, 100);
+    // }
+
+    // 5. Cleanup
+    stbi_image_free(img);
+    free(output_img);
+    // }
+    printf("Processing complete. Check output.jpg\n");
     return 0;
 }
