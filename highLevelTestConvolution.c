@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 199309L
+// #define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -8,6 +8,37 @@
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#include <time.h>
+
+void apply_filter_c(unsigned char* src, unsigned char* dest, long width, long height) {
+    // Standard 3x3 Laplacian Kernel
+    int kernel[3][3] = {
+        { 1, 0, -1},
+        { 2, 0, -2},
+        { 1, 0, -1}
+    };
+
+    for (long y = 1; y < height - 1; y++) {
+        for (long x = 1; x < width - 1; x++) {
+            int sum = 0;
+            
+            // Traditional nested loops for convolution
+            for (int ky = 0; ky < 3; ky++) {
+                for (int kx = 0; kx < 3; kx++) {
+                    long pixel_idx = (y + ky - 1) * width + (x + kx - 1);
+                    sum += src[pixel_idx] * kernel[ky][kx];
+                }
+            }
+            
+            // Absolute value and clamping (same logic as assembly)
+            if (sum < 0) sum = -sum;
+            if (sum > 255) sum = 255;
+            
+            dest[y * width + x] = (unsigned char)sum;
+        }
+    }
+}
 
 // Your assembly function declaration
 // RDI: src, RSI: dest, RDX: width, RCX: height
@@ -36,7 +67,7 @@ int main() {
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     // اجرای جادوی اسمبلی
-    apply_filter_simd(img, output_img, width, height);
+    apply_filter_c(img, output_img, width, height);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 

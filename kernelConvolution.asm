@@ -3,10 +3,9 @@
 ; -----------------------------------------------------------------------------
 
 section .data
-    align 32
-    kernel_top    dw -1, -2, -1
-    kernel_mid    dw  0,  0,  0    ; Added missing middle row
-    kernel_bottom dw  1,  2,  1
+    kernel_top    dw -2, -1,  0
+    kernel_mid    dw -1,  1,  1
+    kernel_bottom dw  0,  1,  2
 
 global apply_filter_simd
 
@@ -22,8 +21,9 @@ apply_filter_simd:
     vpbroadcastw ymm11, [kernel_bottom]   
     vpbroadcastw ymm12, [kernel_bottom + 2]
     vpbroadcastw ymm13, [kernel_bottom + 4]
-    vpbroadcastw ymm14, [kernel_mid]      ; Coeff [1,0]
-    vpbroadcastw ymm15, [kernel_mid + 2]  ; Coeff [1,1]
+    vpbroadcastw ymm14, [kernel_mid]        
+    vpbroadcastw ymm15, [kernel_mid + 2]
+    vpbroadcastw ymm7,  [kernel_mid + 4] 
 
     mov r8, 1                             ; r8 = current_row (y)
 
@@ -62,9 +62,9 @@ apply_filter_simd:
     vmovdqu xmm2, [r13 + r11 + 1]         
     vpmovzxbw ymm2, xmm2
     vpmullw ymm2, ymm2, ymm10             ; Top-Right
-    vpaddw ymm0, ymm0, ymm2
+    vpaddw ymm0, ymm0, ymm2; Mid-Left
 
-    ; Row MIDDLE (Only if needed, here we process it for flexibility)
+    ; Row MIDDLE
     vmovdqu xmm3, [r9 + r11 - 1]
     vpmovzxbw ymm3, xmm3
     vpmullw ymm3, ymm3, ymm14             ; Mid-Left
@@ -73,6 +73,11 @@ apply_filter_simd:
     vmovdqu xmm4, [r9 + r11]
     vpmovzxbw ymm4, xmm4
     vpmullw ymm4, ymm4, ymm15             ; Mid-Center
+    vpaddw ymm0, ymm0, ymm4
+
+    vmovdqu xmm4, [r9 + r11 + 1]
+    vpmovzxbw ymm4, xmm4
+    vpmullw ymm4, ymm4, ymm7              ; Mid-Right
     vpaddw ymm0, ymm0, ymm4
 
     ; Row BELOW
@@ -91,28 +96,103 @@ apply_filter_simd:
     vpmullw ymm5, ymm5, ymm13             ; Bottom-Right
     vpaddw ymm0, ymm0, ymm5
 
-    ; Absolute value & Pack
-    vpabsw ymm0, ymm0                     
+    ; Absolute value
+    vpabsw ymm0, ymm0
     vpackuswb ymm0, ymm0, ymm0            
+    vpermq ymm0, ymm0, 0xD8               ; 00 10 01 11 Means 10 is before 01 
+    vmovdqu [r12 + r11], xmm0             
     
-    vmovdqu [r12 + r11], xmm0             ; Store 16 results
-    
-    add r11, 16
+    add r11, 16                           ; Next 16 pixels
     jmp .col_loop
 
 .scalar_fallback:
+    ; 1. Check if we have reached the end of the width
     cmp r11, rdx
     jge .next_row
-    
-    ; Simple Scalar Logic (keeping it simple for demo)
-    mov al, [r9 + r11 + 1]
-    mov bl, [r9 + r11 - 1]
-    sub al, bl
-    jns .pos
-    neg al
-.pos:
-    shl al, 2
-    mov [r12 + r11], al
+
+    ; 2. Initialize accumulator in R10 (using R10 as a signed sum)
+    xor r10, r10        ; Clear sum
+
+    ; --- Process ROW ABOVE (R13) ---
+    ; Top-Left
+    movzx ax, byte [r13 + r11 - 1]
+    movsx bx, [rel kernel_top]
+    imul  ax, bx
+    movsx eax, ax       ; Sign extend to 32-bit
+    add   r10d, eax
+
+    ; Top-Center
+    movzx ax, byte [r13 + r11]
+    movsx bx, [rel kernel_top + 2]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; Top-Right
+    movzx ax, byte [r13 + r11 + 1]
+    movsx bx, [rel kernel_top + 4]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; --- Process MIDDLE ROW (R9) ---
+    ; Mid-Left
+    movzx ax, byte [r9 + r11 - 1]
+    movsx bx, [rel kernel_mid]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; Mid-Center
+    movzx ax, byte [r9 + r11]
+    movsx bx, [rel kernel_mid + 2]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; Mid-Right
+    movzx ax, byte [r9 + r11 + 1]
+    movsx bx, [rel kernel_mid + 4]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; --- Process ROW BELOW (R14) ---
+    ; Bottom-Left
+    movzx ax, byte [r14 + r11 - 1]
+    movsx bx, [rel kernel_bottom]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; Bottom-Center
+    movzx ax, byte [r14 + r11]
+    movsx bx, [rel kernel_bottom + 2]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; Bottom-Right
+    movzx ax, byte [r14 + r11 + 1]
+    movsx bx, [rel kernel_bottom + 4]
+    imul  ax, bx
+    movsx eax, ax
+    add   r10d, eax
+
+    ; --- Post-Processing: Absolute Value and Clamping ---
+    test r10d, r10d
+    jns .is_positive
+    neg r10d            ; Abs(sum)
+.is_positive:
+    ; Clamp to 255 (Max Byte value)
+    cmp r10d, 255
+    jbe .no_clamp
+    mov r10d, 255
+.no_clamp:
+    ; Store the result back to memory
+    mov [r12 + r11], r10b
+
+    ; Advance to next pixel
     inc r11
     jmp .scalar_fallback
 
@@ -126,3 +206,5 @@ apply_filter_simd:
     vzeroupper
     leave
     ret
+
+section .note.GNU-stack noalloc noexec nowrite progbits
