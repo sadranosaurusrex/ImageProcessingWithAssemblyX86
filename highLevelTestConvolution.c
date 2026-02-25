@@ -14,9 +14,9 @@
 void apply_filter_c(unsigned char* src, unsigned char* dest, long width, long height) {
     // Standard 3x3 Laplacian Kernel
     int kernel[3][3] = {
-        { 1, 0, -1},
-        { 2, 0, -2},
-        { 1, 0, -1}
+        {-2,-1, 0},
+        {-1, 1, 1},
+        { 0, 1, 2}
     };
 
     for (long y = 1; y < height - 1; y++) {
