@@ -3,9 +3,9 @@
 ; -----------------------------------------------------------------------------
 
 section .data
-    kernel_top    dw -2, -1,  0
-    kernel_mid    dw -1,  1,  1
-    kernel_bottom dw  0,  1,  2
+    kernel_top    dw  0, -1,  0
+    kernel_mid    dw -1,  4, -1
+    kernel_bottom dw  0, -1,  0
 
     threshold_val: dw 31
 

@@ -3,55 +3,65 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
-#include <dirent.h> // برای خواندن لیست فایل‌ها بدون توجه به اسم
+#include <dirent.h> 
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-// اعلان تابع اسمبلی
+// Assembly function declaration
+// RDI: src, RSI: dest, RDX: width, RCX: height
 extern void apply_filter_simd(unsigned char* src, unsigned char* dest, int width, int height);
 
-// تابع ساده C برای مقایسه سرعت (Speedup)
+// Standard C implementation for Speedup comparison
 void apply_filter_c(unsigned char* src, unsigned char* dest, int width, int height) {
     for (int y = 1; y < height - 1; y++) {
         for (int x = 1; x < width - 1; x++) {
-            // یک فیلتر لبه‌یابی ساده (مثل لاپلاسین) برای مقایسه
+            // Laplacian-like edge detection filter
             int sum = (src[(y-1)*width + x] + src[(y+1)*width + x] + 
                        src[y*width + (x-1)] + src[y*width + (x+1)]) - 4 * src[y*width + x];
-            if (sum < 0) sum = -sum;
-            // آستانه‌گذاری ۳۱ (همان که در اسمبلی زدید)
+            
+            if (sum < 0) sum = -sum; // Absolute value
+            
+            // Thresholding at 31 to match the Assembly logic
             dest[y*width + x] = (sum > 31) ? 255 : 0;
         }
     }
 }
 
 int main() {
-    int grid = 10;          
-    int tile_size = 28;     
-    int big_w = 280; 
-    int big_h = 280;
+    int grid = 10;          // 10x10 mosaic
+    int tile_size = 28;     // MNIST standard size
+    int big_w = grid * tile_size; // 280px
+    int big_h = grid * tile_size; // 280px
 
+    // Allocate memory for the mosaic (Input and Output)
     unsigned char *big_img = (unsigned char *)calloc(big_w * big_h, 1);
     unsigned char *big_output_asm = (unsigned char *)calloc(big_w * big_h, 1);
     unsigned char *big_output_c = (unsigned char *)calloc(big_w * big_h, 1);
 
-    // ۱. باز کردن پوشه و برداشتن ۱۰۰ فایل اول (بدون نیاز به اسم مشخص)
-    DIR *d = opendir("./mnist/0");
+    if (!big_img || !big_output_asm || !big_output_c) {
+        printf("Memory allocation failed!\n");
+        return 1;
+    }
+
+    // 1. Scan directory and build the mosaic from first 100 PNGs
+    DIR *d = opendir("./mnist_png/0");
     if (!d) {
-        printf("خطا: پوشه mnist پیدا نشد!\n");
+        printf("Error: Directory ./mnist_png/0 not found!\n");
         return 1;
     }
 
     struct dirent *dir;
     int count = 0;
-    printf("در حال لود کردن تصاویر *.png از پوشه mnist...\n");
+    printf("Loading .png files into mosaic buffer...\n");
 
     while ((dir = readdir(d)) != NULL && count < 100) {
         if (strstr(dir->d_name, ".png")) {
             char path[256];
-            sprintf(path, "./mnist/%s", dir->d_name);
+            sprintf(path, "./mnist_png/0/%s", dir->d_name);
+            
             int w, h, c;
             unsigned char *small = stbi_load(path, &w, &h, &c, 1);
             if (small) {
@@ -67,32 +77,41 @@ int main() {
         }
     }
     closedir(d);
-    printf("تعداد %d تصویر در موزاییک چیده شد.\n", count);
+    printf("%d images successfully placed in mosaic.\n", count);
 
     struct timespec start, end;
 
-    // ۲. اجرای نسخه C و زمان‌سنجی
+    // 2. Performance Benchmark: C Implementation
     clock_gettime(CLOCK_MONOTONIC, &start);
     apply_filter_c(big_img, big_output_c, big_w, big_h);
     clock_gettime(CLOCK_MONOTONIC, &end);
     double time_c = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    // ۳. اجرای نسخه اسمبلی (SIMD) و زمان‌سنجی
+    // 3. Performance Benchmark: Assembly (SIMD/AVX2) Implementation
     clock_gettime(CLOCK_MONOTONIC, &start);
     apply_filter_simd(big_img, big_output_asm, big_w, big_h);
     clock_gettime(CLOCK_MONOTONIC, &end);
     double time_asm = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    // ۴. گزارش نهایی برای فایل Word پروژه
-    printf("\n========= گزارش عملکرد فاز ۲ =========\n");
-    printf("زمان اجرای کد C: %.3f میلی‌ثانیه\n", time_c * 1000);
-    printf("زمان اجرای اسمبلی (AVX2): %.3f میلی‌ثانیه\n", time_asm * 1000);
-    printf("تسریع (Speedup): %.2f برابر\n", time_c / time_asm);
-    printf("دقت تشخیص: لبه‌های ۱۰۰ عدد استخراج شد.\n");
-    printf("======================================\n");
+    // 4. Final Performance Report (For your documentation)
+    printf("\n========= Phase 2 Performance Report =========\n");
+    printf("C Execution Time:      %.3f ms\n", time_c * 1000);
+    printf("Assembly (AVX2) Time:  %.3f ms\n", time_asm * 1000);
+    printf("Calculated Speedup:    %.2f x faster\n", time_c / time_asm);
+    printf("Detection Accuracy:    Features extracted for %d digits.\n", count);
+    printf("==============================================\n");
 
-    stbi_write_jpg("result_mosaic_asm.jpg", big_w, big_h, 1, big_output_asm, 100);
+    // 5. Save the final result to the Root Folder
+    if (stbi_write_jpg("mnist_detected_mosaic.jpg", big_w, big_h, 1, big_output_asm, 100)) {
+        printf("Result saved as 'mnist_detected_mosaic.jpg' in the root folder.\n");
+    } else {
+        printf("Error saving output image!\n");
+    }
+
+    // Cleanup
+    free(big_img); 
+    free(big_output_asm); 
+    free(big_output_c);
     
-    free(big_img); free(big_output_asm); free(big_output_c);
     return 0;
 }
