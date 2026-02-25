@@ -7,6 +7,8 @@ section .data
     kernel_mid    dw -1,  1,  1
     kernel_bottom dw  0,  1,  2
 
+    threshold_val: dw 31
+
 global apply_filter_simd
 
 section .text
@@ -100,7 +102,13 @@ apply_filter_simd:
     vpabsw ymm0, ymm0
     vpackuswb ymm0, ymm0, ymm0            
     vpermq ymm0, ymm0, 0xD8               ; 00 10 01 11 Means 10 is before 01 
-    vmovdqu [r12 + r11], xmm0             
+
+    ; فرض می‌کنیم آستانه ما 127 است (هر چه بیشتر از آن بود سفید شود)
+    vpbroadcastb xmm6, [rel threshold_val]; مقدار آستانه را در یک رجیستر قرار دهید
+    vpcmpgtb xmm0, xmm0, xmm6             ; مقایسه: اگر پیکسل > آستانه بود، تمام بیت‌ها 1 می‌شوند (255)
+                                          ; و اگر نبود تمام بیت‌ها 0 می‌شوند (0)
+    
+    vmovdqu [r12 + r11], xmm0             ; ذخیره مستقیم نتیجه سیاه و سفید
     
     add r11, 16                           ; Next 16 pixels
     jmp .col_loop
@@ -182,19 +190,22 @@ apply_filter_simd:
     ; --- Post-Processing: Absolute Value and Clamping ---
     test r10d, r10d
     jns .is_positive
-    neg r10d            ; Abs(sum)
+    neg r10d            ; قدر مطلق
 .is_positive:
-    ; Clamp to 255 (Max Byte value)
-    cmp r10d, 255
-    jbe .no_clamp
-    mov r10d, 255
+    ; آستانه‌گذاری ساده
+    cmp r10d, threshold_val       ; مقایسه با آستانه 
+    ja .make_white      ; اگر بزرگتر بود برو به بخش سفید کردن
+    mov r10b, 0         ; سیاه
+    jmp .no_clamp
+.make_white:
+    mov r10b, 255       ; سفید
 .no_clamp:
     ; Store the result back to memory
     mov [r12 + r11], r10b
 
     ; Advance to next pixel
     inc r11
-    jmp .scalar_fallback
+    jmp .scalar_fallback ; Don't let it slip to the next row
 
 .next_row:
     inc r8

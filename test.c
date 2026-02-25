@@ -18,12 +18,30 @@ int main() {
     int blurCount = 1000;
     
     // for (int i = 0; i < blurCount; i++ )
-    // {
-    // 1. Load the image (Forcing 1 channel/Grayscale for simplicity)
-    unsigned char *img = stbi_load("download - Copy.jpeg", &width, &height, &channels, 1);
-    if (img == NULL) {
-        printf("Error: Could not load image.\n");
-        return 1;
+    // {int grid = 10; // ۱۰ در ۱۰
+    int tile_size = 28;
+    int big_w = grid * tile_size; // ۲۸۰
+    int big_h = grid * tile_size; // ۲۸۰
+
+    unsigned char *big_img = (unsigned char *)calloc(big_w * big_h, 1);
+    unsigned char *big_output = (unsigned char *)calloc(big_w * big_h, 1);
+
+    for (int i = 0; i < 100; i++) {
+        char filename[30];
+        sprintf(filename, "mnist/%d.png", i); // فرض بر این است که نام فایل‌ها ۱ تا ۱۰۰ است
+        int w, h, c;
+        unsigned char *small_img = stbi_load(filename, &w, &h, &c, 1);
+        
+        if (small_img) {
+            int row = i / grid;
+            int col = i % grid;
+            
+            for (int y = 0; y < tile_size; y++) {
+                memcpy(&big_img[(row * tile_size + y) * big_w + (col * tile_size)], 
+                    &small_img[y * tile_size], tile_size);
+            }
+            stbi_image_free(small_img);
+        }
     }
 
     // 2. Allocate memory for output image
