@@ -3,11 +3,12 @@
 ; -----------------------------------------------------------------------------
 
 section .data
-    kernel_top    dw  0, -1,  0
-    kernel_mid    dw -1,  4, -1
-    kernel_bottom dw  0, -1,  0
-
-    threshold_val: dw 31
+    ; High-Gain Laplacian (Forces thin lines to trigger the threshold)
+    kernel_top    dw 1, 2, 1
+    kernel_mid    dw 2, 4, 2
+    kernel_bottom dw 1, 2, 1
+    
+    threshold_val db 255    ; Slightly higher threshold for this hot kernel
 
 global apply_filter_simd
 
@@ -97,18 +98,23 @@ apply_filter_simd:
     vpmovzxbw ymm5, xmm5
     vpmullw ymm5, ymm5, ymm13             ; Bottom-Right
     vpaddw ymm0, ymm0, ymm5
-
-    ; Absolute value
+; Absolute value
     vpabsw ymm0, ymm0
-    vpackuswb ymm0, ymm0, ymm0            
-    vpermq ymm0, ymm0, 0xD8               ; 00 10 01 11 Means 10 is before 01 
 
-    ; فرض می‌کنیم آستانه ما 127 است (هر چه بیشتر از آن بود سفید شود)
-    vpbroadcastb xmm6, [rel threshold_val]; مقدار آستانه را در یک رجیستر قرار دهید
-    vpcmpgtb xmm0, xmm0, xmm6             ; مقایسه: اگر پیکسل > آستانه بود، تمام بیت‌ها 1 می‌شوند (255)
-                                          ; و اگر نبود تمام بیت‌ها 0 می‌شوند (0)
+    ; --- NEW: 16-bit Threshold Comparison ---
+    ; Load the 8-bit threshold and convert it to a 16-bit broadcast
+    movzx eax, byte [rel threshold_val] 
+    vmovd xmm6, eax
+    vpbroadcastw ymm6, xmm6             ; Broadcast threshold as 16-bit words
     
-    vmovdqu [r12 + r11], xmm0             ; ذخیره مستقیم نتیجه سیاه و سفید
+    ; Compare ymm0 > threshold (Safe, because both are positive 16-bit numbers)
+    vpcmpgtw ymm0, ymm0, ymm6           ; If true: 0xFFFF, If false: 0x0000
+
+    ; Now pack the 16-bit masks into 8-bit masks
+    vpacksswb ymm0, ymm0, ymm0          ; 0xFFFF becomes 0xFF (255 - White)
+    vpermq ymm0, ymm0, 0xD8             ; Fix the lane crossing
+    
+    vmovdqu [r12 + r11], xmm0           ; Store direct black and white result
     
     add r11, 16                           ; Next 16 pixels
     jmp .col_loop
@@ -193,7 +199,8 @@ apply_filter_simd:
     neg r10d            ; قدر مطلق
 .is_positive:
     ; آستانه‌گذاری ساده
-    cmp r10d, threshold_val       ; مقایسه با آستانه 
+    movzx ecx, byte [rel threshold_val] ; Fill extra bits with zeroes
+    cmp r10d, ecx
     ja .make_white      ; اگر بزرگتر بود برو به بخش سفید کردن
     mov r10b, 0         ; سیاه
     jmp .no_clamp
